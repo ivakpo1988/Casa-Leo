@@ -347,6 +347,10 @@ tbody tr:hover td:last-child{background:var(--s3)}
         <div class="panel"><div class="panel-title">🕒 <span>Últimas Ventas</span></div><div id="dash-recent"></div></div>
         <div class="panel"><div class="panel-title">🔧 <span>Alquileres Activos</span></div><div id="dash-alq"></div></div>
       </div>
+      <div class="dash-grid">
+        <div class="panel"><div class="panel-title">🧯 <span>Venc. Matafuegos Próximos</span></div><div id="dash-mat-venc"></div></div>
+        <div class="panel"><div class="panel-title">📡 <span>Servicios DirecTV Pendientes</span></div><div id="dash-dtv-pend"></div></div>
+      </div>
     </div>
 
     <div class="section" id="tab-ventas">
@@ -416,18 +420,27 @@ tbody tr:hover td:last-child{background:var(--s3)}
     <div class="section" id="tab-caja">
       <div class="ph">
         <div><div class="ph-title">Caja del Día</div><div class="ph-sub" id="caja-fecha"></div></div>
-        <div class="ph-actions"><button class="btn btn-ghost btn-sm" onclick="renderCaja()">🔄 Actualizar</button></div>
+        <div class="ph-actions">
+          <button class="btn btn-ghost btn-sm" onclick="renderCaja()">🔄 Actualizar</button>
+          <button class="btn btn-ghost btn-sm" onclick="printCaja()">🖨️ Imprimir</button>
+        </div>
+      </div>
+      <div id="caja-total-banner" style="display:none;background:linear-gradient(135deg,var(--ora-glow),var(--grn-glow));border:1px solid var(--orange);border-radius:var(--r);padding:14px 20px;margin-bottom:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em">💼 Total Consolidado del Día</div>
+          <div id="caja-total-val" style="font-family:var(--mono);font-size:28px;font-weight:700;color:var(--orange)">$0.00</div>
+        </div>
+        <div id="caja-total-desglose" style="font-size:11px;color:var(--muted);text-align:right;line-height:1.8"></div>
       </div>
       <div class="caja-grid" id="caja-stats"></div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>#</th><th>Hora</th><th>Cliente</th><th>Items</th><th>Método</th><th>Total</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>Hora</th><th>Cliente</th><th>Items / Detalle</th><th>Tipo</th><th>Total</th><th></th></tr></thead>
           <tbody id="caja-tbody"></tbody>
         </table>
-        <div id="caja-empty" class="empty-row">No hay ventas hoy.</div>
+        <div id="caja-empty" class="empty-row">No hay movimientos hoy.</div>
       </div>
     </div>
-
     <div class="section" id="tab-historial">
       <div class="ph">
         <div><div class="ph-title">Historial de Ventas</div></div>
@@ -1161,8 +1174,20 @@ function renderDash(){
   var deuda=(DB.clientes.reduce(function(s,c){return s+(c.deuda_cc||0);},0))+(DB.proveedores.reduce(function(s,p){return s+(p.deuda||0);},0));
   var alqAct=DB.alquileres.filter(function(a){return a.estado==='Activo';});
 
+  // Totales de otros rubros del dia para el panel
+  var matHoy=DB.matafuegos.filter(function(x){return x.fecha===today;});
+  var totalMatHoy=matHoy.reduce(function(s,x){var ex=matExtra(x);return s+(parseFloat(ex.monto)||0);},0);
+  var alqHoy=DB.alquileres.filter(function(x){return x.salida===today;});
+  var totalAlqHoy=alqHoy.reduce(function(s,x){return s+(parseFloat(x.total)||0);},0);
+  var renHoy=DB.renovables.filter(function(x){return x.fecha===today;});
+  var totalRenHoy=renHoy.reduce(function(s,x){return s+(parseFloat(x.monto)||0);},0);
+  var dtvHoy=DB.directv.filter(function(x){return x.fecha===today;});
+  var totalDtvHoy=dtvHoy.reduce(function(s,x){return s+(parseFloat(x.monto)||0);},0);
+  var totalConsolidado=totalDia+totalMatHoy+totalAlqHoy+totalRenHoy+totalDtvHoy;
+
   document.getElementById('dash-stats').innerHTML=
-    sc('Ventas Hoy','orange',fmt(totalDia),tv.length+' transacciones','💰')+
+    sc('Total Consolidado','orange',fmt(totalConsolidado),'Todos los rubros hoy','💼')+
+    sc('Ventas Hoy','green',fmt(totalDia),tv.length+' transacciones','🛒')+
     sc('Ganancia Hoy','green',fmt(ganDia),'Margen bruto','📈')+
     sc('Stock Bajo','red',low.length,'Bajo mínimo','⚠️')+
     sc('Alquileres','blue',alqAct.length,'Activos','🔧')+
@@ -1193,6 +1218,25 @@ function renderDash(){
     var over=a.devol<today;
     return '<div class="top-row"><div><div style="font-size:12px;font-weight:600">'+esc(a.maq_nombre)+'</div><div style="color:var(--muted);font-size:10px">'+esc(a.cliente_nombre)+' · dev. <span style="'+(over?'color:var(--red)':'')+'">'+(over?'⚠️ ':'')+a.devol+'</span></div></div><span class="badge badge-orange">Activo</span></div>';
   }).join('')||'<div style="color:var(--muted);font-size:12px">Sin alquileres activos.</div>';
+
+  // Panel Vencimientos Matafuegos (próximos 30 días)
+  var hoy30=new Date(); hoy30.setDate(hoy30.getDate()+30);
+  var hoy30s=hoy30.toISOString().slice(0,10);
+  var matVenc=(DB.matafuegos||[]).filter(function(x){return x.prox_venc&&x.prox_venc>=today&&x.prox_venc<=hoy30s;}).sort(function(a,b){return a.prox_venc>b.prox_venc?1:-1;}).slice(0,6);
+  var matVencEl=document.getElementById('dash-mat-venc');
+  if(matVencEl) matVencEl.innerHTML=matVenc.map(function(x){
+    var dias=Math.round((new Date(x.prox_venc)-new Date(today))/(86400000));
+    var color=dias<=7?'var(--red)':dias<=15?'var(--yellow)':'var(--muted)';
+    return '<div class="top-row"><div><div style="font-size:12px;font-weight:600">'+esc(x.cliente_nombre||'—')+'</div><div style="color:var(--muted);font-size:10px">'+esc(x.tipo||'—')+'</div></div><span style="font-family:var(--mono);font-size:11px;color:'+color+'">'+x.prox_venc+' ('+dias+'d)</span></div>';
+  }).join('')||'<div style="color:var(--muted);font-size:12px">✅ Sin vencimientos próximos.</div>';
+
+  // Panel DirecTV Pendientes
+  var dtvPend=(DB.directv||[]).filter(function(x){return x.estado==='Pendiente';}).slice(0,6);
+  var dtvPendEl=document.getElementById('dash-dtv-pend');
+  if(dtvPendEl) dtvPendEl.innerHTML=dtvPend.map(function(x){
+    return '<div class="top-row"><div><div style="font-size:12px;font-weight:600">'+esc(x.cliente_nombre||'—')+'</div><div style="color:var(--muted);font-size:10px">'+esc(x.tipo||'—')+(x.tecnico?' · '+esc(x.tecnico):'')+'</div></div><span class="badge badge-yellow">Pendiente</span></div>';
+  }).join('')||'<div style="color:var(--muted);font-size:12px">✅ Sin servicios pendientes.</div>';
+
 }
 function sc(l,c,v,s,i){ return '<div class="stat-card '+c+'"><div class="sc-icon">'+i+'</div><div class="sc-label">'+l+'</div><div class="sc-val '+c+'">'+v+'</div><div class="sc-sub">'+s+'</div></div>'; }
 
@@ -1318,6 +1362,23 @@ function showTicket(v){
 }
 
 // ══════════════════════════════════════════
+// IMPRIMIR CAJA
+// ══════════════════════════════════════════
+function printCaja(){
+  var content=document.getElementById('caja-total-banner').outerHTML+
+    '<br>'+document.getElementById('caja-stats').outerHTML+
+    '<br><table border="1" cellpadding="6" cellspacing="0" style="width:100%;border-collapse:collapse;font-family:monospace;font-size:12px">'+
+    document.querySelector('#tab-caja table thead').outerHTML+
+    '<tbody>'+document.getElementById('caja-tbody').innerHTML+'</tbody></table>';
+  var w=window.open('','_blank','width=900,height=700');
+  w.document.write('<html><head><title>Caja del Día - Casa Leo</title><style>body{font-family:Arial,sans-serif;padding:20px;color:#000}table{width:100%;border-collapse:collapse}th,td{padding:6px 10px;border:1px solid #ccc;text-align:left}th{background:#f0f0f0}.stat-card{display:inline-block;border:1px solid #ccc;border-radius:6px;padding:10px 14px;margin:4px;min-width:140px}.sc-label{font-size:10px;color:#666;text-transform:uppercase}.sc-val{font-size:20px;font-weight:700}.sc-sub{font-size:10px;color:#888}.badge{font-size:10px;padding:2px 6px;border-radius:3px;background:#eee;font-weight:700}.caja-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}</style></head><body>');
+  w.document.write('<h2>🔨 Casa Leo — Caja del Día ('+document.getElementById('caja-fecha').textContent+')</h2>');
+  w.document.write(content);
+  w.document.write('</body></html>');
+  w.document.close(); w.print();
+}
+
+// ══════════════════════════════════════════
 // CAJA
 // ══════════════════════════════════════════
 function renderCaja(){
@@ -1347,6 +1408,20 @@ function renderCaja(){
   // Servicios DirecTV del día
   var dtv=DB.directv.filter(function(x){return x.fecha===today;});
   var totalDtv=dtv.reduce(function(s,x){return s+(parseFloat(x.monto)||0);},0);
+
+  // Banner total consolidado
+  var totalConsolidado=total+totalMat+totalAlq+totalRen+totalDtv;
+  var banner=document.getElementById('caja-total-banner');
+  if(totalConsolidado>0){
+    banner.style.display='flex';
+    document.getElementById('caja-total-val').textContent=fmt(totalConsolidado);
+    document.getElementById('caja-total-desglose').innerHTML=
+      (total?'💰 Ventas: '+fmt(total)+'<br>':'')+
+      (totalMat?'🧯 Matafuegos: '+fmt(totalMat)+'<br>':'')+
+      (totalAlq?'🔧 Alquileres: '+fmt(totalAlq)+'<br>':'')+
+      (totalRen?'☀️ Renovable: '+fmt(totalRen)+'<br>':'')+
+      (totalDtv?'📡 DirecTV: '+fmt(totalDtv):'');
+  } else { banner.style.display='none'; }
 
   document.getElementById('caja-stats').innerHTML=
     sc('Total Ventas','orange',fmt(total),v.length+' ventas','💰')+
