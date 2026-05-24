@@ -1616,7 +1616,7 @@ function renderClientes(){
   var filtered=DB.clientes.filter(function(c){return!q||c.nombre.toLowerCase().includes(q)||(c.tel||'').includes(q);});
   var tb=document.getElementById('cli-tbody'); tb.innerHTML='';
   filtered.forEach(function(c){
-    var wa='https://wa.me/'+(c.tel||'').replace(/\D/g,'');
+    var wa='https://wa.me/'+normTel(c.tel||'');
     tb.innerHTML+='<tr><td><div style="font-weight:600;font-size:12px">'+esc(c.nombre)+'</div><div style="color:var(--muted);font-size:10px">'+esc(c.email||'')+'</div></td><td style="font-family:var(--mono);font-size:12px">'+esc(c.tel||'—')+'</td><td style="color:var(--muted);font-size:11px">'+esc(c.dir||'—')+'</td><td style="font-family:var(--mono)">'+(c.compras||0)+'</td><td style="font-family:var(--mono);'+(c.deuda_cc>0?'color:var(--red);font-weight:700':'color:var(--muted)')+'">'+fmt(c.deuda_cc||0)+'</td><td style="color:var(--muted);font-size:11px">'+(c.ultimo_pedido||'—')+'</td><td><div class="act"><a href="'+wa+'" target="_blank" class="btn btn-green btn-xs">💬</a><button class="btn btn-ghost btn-xs" onclick="openClienteModal('+c.id+')">✏</button><button class="btn btn-danger btn-xs" onclick="delCliente('+c.id+')">🗑</button></div></td></tr>';
   });
   document.getElementById('cli-empty').style.display=filtered.length?'none':'block';
@@ -1899,7 +1899,7 @@ function renderMatafuegos(){
   var badges={Borrador:'badge-gray',Enviada:'badge-blue',Aprobada:'badge-green',Rechazada:'badge-red',Pendiente:'badge-yellow','En Taller':'badge-blue',Listo:'badge-green',Entregado:'badge-gray'};
   
   DB.matafuegos.forEach(function(m){
-    var wa='https://wa.me/'+(m.telefono||'').replace(/\D/g,'');
+    var wa='https://wa.me/'+normTel(m.telefono||'');
     var extra=matExtra(m);
     var detalle=quoteDetail(extra.descripcion||'', ((m.peso?m.peso+' Kg':'')+(m.serie?' / Serie '+m.serie:'')));
     tb.innerHTML+='<tr><td style="font-size:11px;color:var(--muted)">'+(m.fecha||todayStr())+'</td><td style="font-weight:600;font-size:12px">'+esc(m.cliente_nombre||'—')+'</td><td>'+esc(m.telefono||'—')+' <a href="'+wa+'" target="_blank" style="text-decoration:none">💬</a></td><td><span class="badge badge-orange">'+esc(m.tipo)+'</span></td><td style="font-size:11px">'+esc(detalle)+'</td><td style="font-family:var(--mono);color:var(--green);font-weight:700">'+fmt(extra.monto)+'</td><td style="font-family:var(--mono);font-size:11px">'+esc(extra.validez||'—')+'</td><td><span class="badge '+(badges[m.estado]||'badge-gray')+'">'+m.estado+'</span></td><td><div class="act"><button class="btn btn-ghost btn-xs" onclick="printMatQuote('+m.id+')">🧾</button>'+(extra.foto&&m.telefono?'<a class="btn btn-ghost btn-xs" href="'+encodeWaFoto(m,extra)+'" target="_blank" title="Enviar foto por WA">📱</a>':'')+'<button class="btn btn-ghost btn-xs" onclick="openMatModal('+m.id+')">✏</button><button class="btn btn-danger btn-xs" onclick="delMat('+m.id+')">🗑</button></div></td></tr>';
@@ -1944,8 +1944,19 @@ function fillMatPhone(){
   }
 }
 
+function normTel(t){
+  // Limpia caracteres no numéricos
+  var n=(t||'').replace(/\D/g,'');
+  // Si ya empieza con 54, dejarlo
+  if(n.startsWith('54')) return n;
+  // Si empieza con 0 (ej: 011...), sacar el 0
+  if(n.startsWith('0')) n=n.slice(1);
+  // Agregar código de país Argentina
+  return '54'+n;
+}
+
 function encodeWaFoto(m, extra){
-  var tel=(m.telefono||'').replace(/\D/g,'');
+  var tel=normTel(m.telefono||'');
   var foto=extra&&extra.foto?extra.foto:'';
   var msg='Hola '+(m.cliente_nombre||'cliente')+'! 👋\n\nTe enviamos la foto del matafuego registrado ('+(m.tipo||'')+'.) desde *Casa Leo*:\n\n📷 '+foto+'\n\nCualquier consulta, estamos a tu disposición.';
   return 'https://wa.me/'+tel+'?text='+encodeURIComponent(msg);
@@ -1992,7 +2003,7 @@ async function saveMat(){
     if(id){await sbUpdate('matafuegos',id,obj);}else{await sbInsert('matafuegos',obj);}
     await loadAll(); closeModal('modal-matafuegos'); renderMatafuegos(); toast('Registro guardado');
     // Auto-envío WhatsApp si hay foto y teléfono
-    var tel=(document.getElementById('mmat-tel').value||'').replace(/\D/g,'');
+    var tel=normTel(document.getElementById('mmat-tel').value||'');
     if(tel && photoValue && photoValue.indexOf('http')===0){
       setTimeout(function(){
         var nombre=document.getElementById('mmat-cli').value?cn:'cliente';
