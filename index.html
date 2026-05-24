@@ -1902,7 +1902,7 @@ function renderMatafuegos(){
     var wa='https://wa.me/'+normTel(m.telefono||'');
     var extra=matExtra(m);
     var detalle=quoteDetail(extra.descripcion||'', ((m.peso?m.peso+' Kg':'')+(m.serie?' / Serie '+m.serie:'')));
-    tb.innerHTML+='<tr><td style="font-size:11px;color:var(--muted)">'+(m.fecha||todayStr())+'</td><td style="font-weight:600;font-size:12px">'+esc(m.cliente_nombre||'—')+'</td><td>'+esc(m.telefono||'—')+' <a href="'+wa+'" target="_blank" style="text-decoration:none">💬</a></td><td><span class="badge badge-orange">'+esc(m.tipo)+'</span></td><td style="font-size:11px">'+esc(detalle)+'</td><td style="font-family:var(--mono);color:var(--green);font-weight:700">'+fmt(extra.monto)+'</td><td style="font-family:var(--mono);font-size:11px">'+esc(extra.validez||'—')+'</td><td><span class="badge '+(badges[m.estado]||'badge-gray')+'">'+m.estado+'</span></td><td><div class="act"><button class="btn btn-ghost btn-xs" onclick="printMatQuote('+m.id+')">🧾</button>'+(extra.foto&&m.telefono?'<a class="btn btn-ghost btn-xs" href="'+encodeWaFoto(m,extra)+'" target="_blank" title="Enviar foto por WA">📱</a>':'')+'<button class="btn btn-ghost btn-xs" onclick="openMatModal('+m.id+')">✏</button><button class="btn btn-danger btn-xs" onclick="delMat('+m.id+')">🗑</button></div></td></tr>';
+    tb.innerHTML+='<tr><td style="font-size:11px;color:var(--muted)">'+(m.fecha||todayStr())+'</td><td style="font-weight:600;font-size:12px">'+esc(m.cliente_nombre||'—')+'</td><td>'+esc(m.telefono||'—')+' <a href="'+wa+'" target="_blank" style="text-decoration:none">💬</a></td><td><span class="badge badge-orange">'+esc(m.tipo)+'</span></td><td style="font-size:11px">'+esc(detalle)+'</td><td style="font-family:var(--mono);color:var(--green);font-weight:700">'+fmt(extra.monto)+'</td><td style="font-family:var(--mono);font-size:11px">'+esc(extra.validez||'—')+'</td><td><span class="badge '+(badges[m.estado]||'badge-gray')+'">'+m.estado+'</span></td><td><div class="act"><button class="btn btn-ghost btn-xs" onclick="printMatQuote('+m.id+')">🧾</button>'+(extra.foto&&m.telefono?'<button class="btn btn-ghost btn-xs" onclick="sendMatFotoWa('+m.id+')" title="Enviar foto por WhatsApp">📱</button>':'')+'<button class="btn btn-ghost btn-xs" onclick="openMatModal('+m.id+')">✏</button><button class="btn btn-danger btn-xs" onclick="delMat('+m.id+')">🗑</button></div></td></tr>';
   });
   document.getElementById('matafuegos-empty').style.display=DB.matafuegos.length?'none':'block';
 }
@@ -1955,10 +1955,41 @@ function normTel(t){
   return '54'+n;
 }
 
+async function sendFotoWaByData(tel, nombre, tipo, fotoUrl){
+  // Intentar copiar la imagen al portapapeles
+  try {
+    var resp = await fetch(fotoUrl);
+    var blob = await resp.blob();
+    // Descargar la foto automáticamente
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'matafuego-'+Date.now()+'.jpg';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('📥 Foto descargada — pegala en WhatsApp');
+  } catch(e) {
+    console.warn('No se pudo descargar la foto:', e);
+  }
+  // Abrir WhatsApp con el mensaje
+  var msg = 'Hola '+nombre+'! 👋\n\nTe enviamos la foto del matafuego registrado ('+tipo+') desde *Casa Leo*.\n\n📎 Adjuntamos la imagen en este mensaje.\n\nCualquier consulta, estamos a tu disposición.';
+  setTimeout(function(){
+    window.open('https://wa.me/'+tel+'?text='+encodeURIComponent(msg), '_blank');
+  }, 600);
+}
+
+async function sendMatFotoWa(id){
+  var m = DB.matafuegos.find(function(x){ return x.id===id; });
+  if(!m){ toast('No se encontró el registro','err'); return; }
+  var extra = matExtra(m);
+  if(!extra.foto){ toast('Este registro no tiene foto','warn'); return; }
+  if(!m.telefono){ toast('El cliente no tiene teléfono cargado','warn'); return; }
+  var tel = normTel(m.telefono);
+  await sendFotoWaByData(tel, m.cliente_nombre||'cliente', m.tipo||'', extra.foto);
+}
+
 function encodeWaFoto(m, extra){
   var tel=normTel(m.telefono||'');
-  var foto=extra&&extra.foto?extra.foto:'';
-  var msg='Hola '+(m.cliente_nombre||'cliente')+'! 👋\n\nTe enviamos la foto del matafuego registrado ('+(m.tipo||'')+'.) desde *Casa Leo*:\n\n📷 '+foto+'\n\nCualquier consulta, estamos a tu disposición.';
+  var msg='Hola '+(m.cliente_nombre||'cliente')+'! 👋\n\nTe enviamos la foto del matafuego registrado ('+(m.tipo||'')+') desde *Casa Leo*.\n\n📎 La imagen se descargará automáticamente, pegala en el chat.\n\nCualquier consulta, estamos a tu disposición.';
   return 'https://wa.me/'+tel+'?text='+encodeURIComponent(msg);
 }
 
@@ -2004,13 +2035,11 @@ async function saveMat(){
     await loadAll(); closeModal('modal-matafuegos'); renderMatafuegos(); toast('Registro guardado');
     // Auto-envío WhatsApp si hay foto y teléfono
     var tel=normTel(document.getElementById('mmat-tel').value||'');
-    if(tel && photoValue && photoValue.indexOf('http')===0){
+    if(tel && tel.length>4 && photoValue && photoValue.indexOf('http')===0){
       setTimeout(function(){
-        var nombre=document.getElementById('mmat-cli').value?cn:'cliente';
-        var tipo=document.getElementById('mmat-tipo').value;
-        var msg='Hola '+nombre+'! 👋\n\nTe enviamos la foto del matafuego registrado ('+tipo+') desde *Casa Leo*:\n\n📷 '+photoValue+'\n\nCualquier consulta, estamos a tu disposición.';
-        var waUrl='https://wa.me/'+tel+'?text='+encodeURIComponent(msg);
-        if(confirm('¿Enviar foto al cliente por WhatsApp?')){window.open(waUrl,'_blank');}
+        if(confirm('¿Enviar foto al cliente por WhatsApp?')){
+          sendFotoWaByData(tel, cn, document.getElementById('mmat-tipo').value, photoValue);
+        }
       },400);
     }
   } catch(e){
