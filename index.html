@@ -1902,7 +1902,7 @@ function renderMatafuegos(){
     var wa='https://wa.me/'+(m.telefono||'').replace(/\D/g,'');
     var extra=matExtra(m);
     var detalle=quoteDetail(extra.descripcion||'', ((m.peso?m.peso+' Kg':'')+(m.serie?' / Serie '+m.serie:'')));
-    tb.innerHTML+='<tr><td style="font-size:11px;color:var(--muted)">'+(m.fecha||todayStr())+'</td><td style="font-weight:600;font-size:12px">'+esc(m.cliente_nombre||'—')+'</td><td>'+esc(m.telefono||'—')+' <a href="'+wa+'" target="_blank" style="text-decoration:none">💬</a></td><td><span class="badge badge-orange">'+esc(m.tipo)+'</span></td><td style="font-size:11px">'+esc(detalle)+'</td><td style="font-family:var(--mono);color:var(--green);font-weight:700">'+fmt(extra.monto)+'</td><td style="font-family:var(--mono);font-size:11px">'+esc(extra.validez||'—')+'</td><td><span class="badge '+(badges[m.estado]||'badge-gray')+'">'+m.estado+'</span></td><td><div class="act"><button class="btn btn-ghost btn-xs" onclick="printMatQuote('+m.id+')">🧾</button><button class="btn btn-ghost btn-xs" onclick="openMatModal('+m.id+')">✏</button><button class="btn btn-danger btn-xs" onclick="delMat('+m.id+')">🗑</button></div></td></tr>';
+    tb.innerHTML+='<tr><td style="font-size:11px;color:var(--muted)">'+(m.fecha||todayStr())+'</td><td style="font-weight:600;font-size:12px">'+esc(m.cliente_nombre||'—')+'</td><td>'+esc(m.telefono||'—')+' <a href="'+wa+'" target="_blank" style="text-decoration:none">💬</a></td><td><span class="badge badge-orange">'+esc(m.tipo)+'</span></td><td style="font-size:11px">'+esc(detalle)+'</td><td style="font-family:var(--mono);color:var(--green);font-weight:700">'+fmt(extra.monto)+'</td><td style="font-family:var(--mono);font-size:11px">'+esc(extra.validez||'—')+'</td><td><span class="badge '+(badges[m.estado]||'badge-gray')+'">'+m.estado+'</span></td><td><div class="act"><button class="btn btn-ghost btn-xs" onclick="printMatQuote('+m.id+')">🧾</button>'+(extra.foto&&m.telefono?'<a class="btn btn-ghost btn-xs" href="'+encodeWaFoto(m,extra)+'" target="_blank" title="Enviar foto por WA">📱</a>':'')+'<button class="btn btn-ghost btn-xs" onclick="openMatModal('+m.id+')">✏</button><button class="btn btn-danger btn-xs" onclick="delMat('+m.id+')">🗑</button></div></td></tr>';
   });
   document.getElementById('matafuegos-empty').style.display=DB.matafuegos.length?'none':'block';
 }
@@ -1942,6 +1942,13 @@ function fillMatPhone(){
   if(sel.selectedOptions.length && sel.selectedOptions[0].dataset.tel){
     document.getElementById('mmat-tel').value = sel.selectedOptions[0].dataset.tel;
   }
+}
+
+function encodeWaFoto(m, extra){
+  var tel=(m.telefono||'').replace(/\D/g,'');
+  var foto=extra&&extra.foto?extra.foto:'';
+  var msg='Hola '+(m.cliente_nombre||'cliente')+'! 👋\n\nTe enviamos la foto del matafuego registrado ('+(m.tipo||'')+'.) desde *Casa Leo*:\n\n📷 '+foto+'\n\nCualquier consulta, estamos a tu disposición.';
+  return 'https://wa.me/'+tel+'?text='+encodeURIComponent(msg);
 }
 
 async function saveMat(){
@@ -1984,6 +1991,17 @@ async function saveMat(){
   try {
     if(id){await sbUpdate('matafuegos',id,obj);}else{await sbInsert('matafuegos',obj);}
     await loadAll(); closeModal('modal-matafuegos'); renderMatafuegos(); toast('Registro guardado');
+    // Auto-envío WhatsApp si hay foto y teléfono
+    var tel=(document.getElementById('mmat-tel').value||'').replace(/\D/g,'');
+    if(tel && photoValue && photoValue.indexOf('http')===0){
+      setTimeout(function(){
+        var nombre=document.getElementById('mmat-cli').value?cn:'cliente';
+        var tipo=document.getElementById('mmat-tipo').value;
+        var msg='Hola '+nombre+'! 👋\n\nTe enviamos la foto del matafuego registrado ('+tipo+') desde *Casa Leo*:\n\n📷 '+photoValue+'\n\nCualquier consulta, estamos a tu disposición.';
+        var waUrl='https://wa.me/'+tel+'?text='+encodeURIComponent(msg);
+        if(confirm('¿Enviar foto al cliente por WhatsApp?')){window.open(waUrl,'_blank');}
+      },400);
+    }
   } catch(e){
     if(String(e.message||e).match(/descripcion|monto|validez|schema cache|column/i)){
       try {
